@@ -1,29 +1,42 @@
-name: glucotrack
-description: Daily blood sugar and health monitor.
-publish_to: 'none'
-version: 1.0.0+1
+name: Build Android APK
 
-environment:
-  sdk: '>=3.4.0 <4.0.0'
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
 
-dependencies:
-  flutter:
-    sdk: flutter
-  shared_preferences: ^2.3.2
-  share_plus: ^10.1.4
-  path_provider: ^2.1.4
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_launcher_icons: ^0.14.1
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-flutter:
-  uses-material-design: true
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
 
-flutter_launcher_icons:
-  android: "launcher_icon"
-  ios: false
-  image_path: "assets/icon.png"
-  adaptive_icon_background: "#0284C7"
-  adaptive_icon_foreground: "assets/icon_foreground.png"
+      - name: Generate Android platform files (keeps our lib/ and pubspec)
+        run: |
+          mkdir -p /tmp/keep
+          cp -r lib /tmp/keep/lib
+          cp pubspec.yaml /tmp/keep/pubspec.yaml
+          flutter create --platforms=android --project-name glucotrack --org com.glucotrack .
+          rm -rf lib test
+          cp -r /tmp/keep/lib lib
+          cp /tmp/keep/pubspec.yaml pubspec.yaml
+          sed -i 's/android:label="[^"]*"/android:label="GlucoTrack"/' android/app/src/main/AndroidManifest.xml
+
+      - run: flutter pub get
+      - run: dart run flutter_launcher_icons
+      - run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GlucoTrack-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
