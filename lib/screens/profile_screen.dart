@@ -58,9 +58,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return calculateBmi(w, h);
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    widget.state.saveProfile(UserProfile(
+    final ok = await widget.state.saveProfile(UserProfile(
       name: _name.text.trim().isEmpty ? 'User' : _name.text.trim(),
       age: int.tryParse(_age.text) ?? 40,
       weight: double.tryParse(_weight.text) ?? 75,
@@ -68,9 +68,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       gender: _gender,
       diabetesType: _type,
     ));
+    if (!mounted) return;
     FocusScope.of(context).unfocus();
-    showToast(context, 'Profile Updated',
-        'Your age, weight, and BMI have been saved.');
+    if (ok) {
+      showToast(context, 'Profile Saved',
+          'Stored on this phone — it will be here next time.');
+    } else {
+      showToast(context, 'Could not save',
+          'Your phone refused to store the profile. Please try again.',
+          error: true);
+    }
   }
 
   InputDecoration _dec() => InputDecoration(
