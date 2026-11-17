@@ -26,39 +26,65 @@ class AppState extends ChangeNotifier {
 
   // ---- persistence -------------------------------------------------------
   Future<void> load() async {
+    SharedPreferences? prefs;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final r = prefs.getString(_kReadings);
-      readings = r != null
-          ? (jsonDecode(r) as List)
-              .map((e) => Reading.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : _defaultReadings();
-      final p = prefs.getString(_kProfile);
-      if (p != null) {
-        profile = UserProfile.fromJson(jsonDecode(p) as Map<String, dynamic>);
-      }
-      final u = prefs.getString(_kUnit);
-      if (u == 'mg' || u == 'mmol') displayUnit = u!;
-    } catch (_) {
-      readings = _defaultReadings();
+      prefs = await SharedPreferences.getInstance();
+    } catch (e) {
+      debugPrint('Storage unavailable: $e');
     }
+
+    // Each part loads on its own, so one problem never wipes the others.
+    var haveSavedReadings = false;
+    if (prefs != null) {
+      try {
+        final r = prefs.getString(_kReadings);
+        if (r != null) {
+          readings = (jsonDecode(r) as List)
+              .map((e) => Reading.fromJson(e as Map<String, dynamic>))
+              .toList();
+          haveSavedReadings = true;
+        }
+      } catch (e) {
+        debugPrint('Could not read readings: $e');
+      }
+      try {
+        final p = prefs.getString(_kProfile);
+        if (p != null) {
+          profile =
+              UserProfile.fromJson(jsonDecode(p) as Map<String, dynamic>);
+        }
+      } catch (e) {
+        debugPrint('Could not read profile: $e');
+      }
+      try {
+        final u = prefs.getString(_kUnit);
+        if (u == 'mg' || u == 'mmol') displayUnit = u!;
+      } catch (e) {
+        debugPrint('Could not read unit: $e');
+      }
+    }
+    if (!haveSavedReadings) readings = _defaultReadings();
+
     _sort();
     loaded = true;
     notifyListeners();
   }
 
-  Future<void> _save() async {
+  /// Writes one value and reads it back to confirm it really was stored.
+  Future<bool> _write(String key, String value) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-          _kReadings, jsonEncode(readings.map((e) => e.toJson()).toList()));
-      await prefs.setString(_kProfile, jsonEncode(profile.toJson()));
-      await prefs.setString(_kUnit, displayUnit);
+      final ok = await prefs.setString(key, value);
+      await prefs.reload();
+      return ok && prefs.getString(key) == value;
     } catch (e) {
-      debugPrint('Could not save: $e');
+      debugPrint('Could not save $key: $e');
+      return false;
     }
   }
+
+  Future<bool> _saveReadings() =>
+      _write(_kReadings, jsonEncode(readings.map((e) => e.toJson()).toList()));
 
   void _sort() {
     readings.sort(
@@ -68,27 +94,28 @@ class AppState extends ChangeNotifier {
   // ---- mutations ---------------------------------------------------------
   void setUnit(String unit) {
     displayUnit = unit;
-    _save();
+    _write(_kUnit, unit);
     notifyListeners();
   }
 
   void addReading(Reading r) {
     readings = [...readings, r];
     _sort();
-    _save();
+    _saveReadings();
     notifyListeners();
   }
 
   void deleteReading(int id) {
     readings = readings.where((r) => r.id != id).toList();
-    _save();
+    _saveReadings();
     notifyListeners();
   }
 
-  void saveProfile(UserProfile p) {
+  /// Returns true only if the profile was confirmed as stored on the phone.
+  Future<bool> saveProfile(UserProfile p) async {
     profile = p;
-    _save();
     notifyListeners();
+    return _write(_kProfile, jsonEncode(p.toJson()));
   }
 
   // ---- queries -----------------------------------------------------------
